@@ -49,9 +49,9 @@ This project came to be because I wanted to import my iTunes playlist's m3u file
 
 The program performs the following transformations on the M3U playlist file:
 
-1. Lines starting with "001x/" are replaced with "sample-".
+1. Lines starting with value from the "initator" are replaced with the value of "replacement".
 
-2. Lines containing "##/2v" are deleted.
+2. Lines containing the value of "kill_line" are deleted.
 
 Ensure that the input file is a valid M3U playlist file. If the file does not match the expected format, the program will exit and display an appropriate error message.
 
@@ -104,4 +104,4 @@ SAMPLE-updated.m3u
 ```
 #EXTM3U
 ../../C/Music/folder/artist/song.mp3
-``
+```
