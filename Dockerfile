@@ -1,18 +1,25 @@
-# Use an official Python runtime as the base image
-FROM python:3.9-slim
+# Base image
+FROM node:20-slim
 
-# Set the working directory in the container
+# Set working directory
 WORKDIR /app
 
-# Copy the requirements file into the container
-COPY requirements.txt .
+# Install Node.js dependencies
+COPY app/package.json ./package.json
+RUN npm install
 
-# Install the Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy Node.js app
+COPY app/ ./app/
 
-# Copy the source code into the container
-COPY main.py .
-COPY src/m3u_transform.py .
+# Copy private script directory
+COPY m3u_script/ ./m3u_script/
 
-# Set the entry point command for the container
-CMD ["python", "main.py"]
+# Install Python dependencies for the script
+RUN apt-get update && apt-get install -y python3.11 python3-pip
+RUN pip3 install --break-system-packages -r ./m3u_script/requirements.txt
+
+# Expose port
+EXPOSE 5000
+
+# Run the Node.js server
+CMD ["node", "./app/server.js"]

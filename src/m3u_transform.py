@@ -22,7 +22,7 @@ class M3UTransformer:
         self.input_file = input_file
         self.settings = settings
         self.df = None
-        self.output_file = input_file[:-4]+self.settings["replace_file_value"] +".m3u"
+        self.output_file = input_file[:-4]+self.settings["replace_file_value"] + ".m3u"
 
         if self.settings["replace_file"]:
             self.output_file = self.input_file
@@ -31,6 +31,7 @@ class M3UTransformer:
         self.read_m3u_file()
         self.switch_slash_placement()
         self.delete_lines_containing(self.settings["kill_line"])
+        self.standardize_element()
         self.replace_lines_starting_with(self.settings["initiator"], self.settings["replacement"])
         self.write_m3u_file()
 
@@ -38,13 +39,24 @@ class M3UTransformer:
 
     @error_check_decorator
     def read_m3u_file(self):
-        self.df = pd.read_csv(self.input_file, header=None, on_bad_lines=bad_line_handler, engine='python',sep='\t')
+        pd.set_option('display.max_colwidth', None)
+        self.df = pd.read_csv(self.input_file, header=None, on_bad_lines="skip", engine='python', sep='\t')
 
     @error_check_decorator
     def replace_lines_starting_with(self, search_str, replace_str):
         for index, row in self.df.iterrows():
             if row[0].startswith(search_str):
                 self.df.at[index, 0] = replace_str + row[0][len(search_str):]
+                
+    @error_check_decorator
+    def standardize_element(self):
+        for index, row in self.df.iterrows():
+            entry = row[0]
+            entry_elements = entry.split("/")
+            artist_entry = str(entry_elements[2])
+            if artist_entry.isupper(): 
+                entry_elements[2] = artist_entry.title()
+                self.df.at[index, 0] = "/".join(entry_elements)
 
     @error_check_decorator
     def delete_lines_containing(self, search_str):
