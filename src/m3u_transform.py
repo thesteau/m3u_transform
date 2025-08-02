@@ -32,6 +32,7 @@ class M3UTransformer:
         self.switch_slash_placement()
         self.delete_lines_containing(self.settings["kill_line"])
         self.standardize_element()
+        self.replace_lines_containing()
         self.replace_lines_starting_with(self.settings["initiator"], self.settings["replacement"])
         self.write_m3u_file()
 
@@ -47,14 +48,29 @@ class M3UTransformer:
         for index, row in self.df.iterrows():
             if row[0].startswith(search_str):
                 self.df.at[index, 0] = replace_str + row[0][len(search_str):]
-                
+
+    @error_check_decorator
+    def replace_lines_containing(self):
+        targets = self.settings["target_items"]
+        replacements = self.settings["replacement_items"]
+
+        if len(targets) != len(replacements):
+            return
+
+        for idx in range(len(targets)):
+            target = targets[idx]
+            replacement = replacements[idx]
+
+            for index, row in self.df.iterrows():
+                self.df.at[index, 0] = row[0].replace(target, replacement)
+
     @error_check_decorator
     def standardize_element(self):
         for index, row in self.df.iterrows():
             entry = row[0]
             entry_elements = entry.split("/")
             artist_entry = str(entry_elements[2])
-            if artist_entry.isupper(): 
+            if artist_entry.isupper():
                 entry_elements[2] = artist_entry.title()
                 self.df.at[index, 0] = "/".join(entry_elements)
 
