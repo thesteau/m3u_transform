@@ -3,6 +3,10 @@
     "replacement": "",
     "kill_line":"",
     "header":"",
+    "target_items": [
+    ],
+    "replacement_items": [
+    ],
     "replace_file":true,
     "replace_file_value":"-u"
 }
