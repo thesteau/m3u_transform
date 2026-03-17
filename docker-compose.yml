@@ -1,0 +1,8 @@
+services:
+  m3u-transform:
+    build:
+      context: .
+    env_file:
+      - .env
+    volumes:
+      - ./files:/app/files

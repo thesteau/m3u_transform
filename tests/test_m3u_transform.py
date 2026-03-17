@@ -1,48 +1,87 @@
-import unittest
-import pandas as pd
+import shutil
+import uuid
+from pathlib import Path
+
+from src.config import TransformConfig
 from src.m3u_transform import M3UTransformer
+from src.runner import discover_m3u_files
 
 
-class TestM3UTransformer(unittest.TestCase):
-
-    def setUp(self) -> None:
-        settings = {'replace_file': False, 'replace_file_value': '-u', 'initiator': '001x/', 'replacement': 'sample-', 'kill_line': '##/2v', 'header': 'File'}
-        self.class_under_test = M3UTransformer('test_input.m3u', settings)
-        return super().setUp()
-
-    def test_replace_lines_starting_with(self):
-        input_lines = ['#EXTM3U', '001x/file1.mp3', 'file2.mp3']
-        expected_output = ['#EXTM3U', 'sample-file1.mp3', 'file2.mp3']
-
-        self.class_under_test.df = pd.DataFrame({0: input_lines})
-
-        self.class_under_test.replace_lines_starting_with('001x/', 'sample-')
-
-        output_lines = self.class_under_test.df[0].tolist()
-        self.assertEqual(output_lines, expected_output)
-
-    def test_delete_lines_containing(self):
-        input_lines = ['#EXTM3U', 'file1.mp3', 'file2.mp3', '##/2v']
-        expected_output = ['#EXTM3U', 'file1.mp3', 'file2.mp3']
-
-        self.class_under_test.df = pd.DataFrame({0: input_lines})
-
-        self.class_under_test.delete_lines_containing('##/2v')
-
-        output_lines = self.class_under_test.df[0].tolist()
-        self.assertEqual(output_lines, expected_output)
-
-    def test_switch_slash_placement(self):
-        input_lines = ['file1\\mp3', 'file2\\mp3']
-        expected_output = ['file1/mp3', 'file2/mp3']
-
-        self.class_under_test.df = pd.DataFrame({0: input_lines})
-
-        self.class_under_test.switch_slash_placement()
-
-        output_lines = self.class_under_test.df[0].tolist()
-        self.assertEqual(output_lines, expected_output)
+def build_config(input_dir: Path, replace_file: bool = False) -> TransformConfig:
+    return TransformConfig(
+        input_dir=input_dir,
+        initiator="C:/Music/",
+        replacement="../../library/",
+        kill_line="#EXTINF",
+        header="#EXTM3U",
+        replace_file=replace_file,
+        replace_file_value="-synology",
+        target_items=["Mixtape", "LIVE SET"],
+        replacement_items=["MixTape", "Live Set"],
+    )
 
 
-if __name__ == '__main__':
-    unittest.main()
+def make_test_dir() -> Path:
+    root = Path(".tmp-tests")
+    root.mkdir(exist_ok=True)
+    test_dir = root / str(uuid.uuid4())
+    test_dir.mkdir()
+    return test_dir
+
+
+def test_transform_file_creates_new_output() -> None:
+    test_dir = make_test_dir()
+    try:
+        playlist = test_dir / "sample.m3u"
+        playlist.write_text(
+            "#EXTM3U\n"
+            "#EXTINF:123,Example Song\n"
+            "C:\\Music\\DJ\\LIVE SET\\Mixtape\\track.mp3\n",
+            encoding="utf-8",
+        )
+
+        transformer = M3UTransformer(build_config(test_dir))
+        result = transformer.transform_file(playlist)
+
+        assert result.destination == test_dir / "sample-synology.m3u"
+        assert result.destination.read_text(encoding="utf-8") == (
+            "#EXTM3U\n"
+            "../../library/Dj/Live Set/MixTape/track.mp3\n"
+        )
+    finally:
+        shutil.rmtree(test_dir, ignore_errors=True)
+
+
+def test_transform_file_can_replace_in_place() -> None:
+    test_dir = make_test_dir()
+    try:
+        playlist = test_dir / "sample.m3u"
+        playlist.write_text("#EXTM3U\nC:\\Music\\ARTIST\\Album\\track.mp3\n", encoding="utf-8")
+
+        transformer = M3UTransformer(build_config(test_dir, replace_file=True))
+        result = transformer.transform_file(playlist)
+
+        assert result.destination == playlist
+        assert playlist.read_text(encoding="utf-8") == (
+            "#EXTM3U\n"
+            "../../library/Artist/Album/track.mp3\n"
+        )
+    finally:
+        shutil.rmtree(test_dir, ignore_errors=True)
+
+
+def test_discover_m3u_files_returns_only_playlists() -> None:
+    test_dir = make_test_dir()
+    try:
+        first = test_dir / "a.m3u"
+        second = test_dir / "b.M3U"
+        note = test_dir / "notes.txt"
+        first.write_text("#EXTM3U\n", encoding="utf-8")
+        second.write_text("#EXTM3U\n", encoding="utf-8")
+        note.write_text("ignore me\n", encoding="utf-8")
+
+        results = discover_m3u_files(test_dir)
+
+        assert results == [first, second]
+    finally:
+        shutil.rmtree(test_dir, ignore_errors=True)

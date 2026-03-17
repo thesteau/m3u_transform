@@ -1,90 +1,71 @@
-import pandas as pd
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from src.config import TransformConfig
 
 
-def error_check_decorator(method):
-    def wrapper(self, *args, **kwargs):
-        try:
-            return method(self, *args, **kwargs)
-        except Exception as e:
-            line_number = kwargs.get('index') + 1 if 'index' in kwargs else -1
-            print(f"Error occurred in line {line_number}: {str(e)}")
-    return wrapper
-
-
-def bad_line_handler(line):
-    print(line)
-    return "warn"
+@dataclass
+class TransformationResult:
+    source: Path
+    destination: Path
+    lines_written: int
 
 
 class M3UTransformer:
+    def __init__(self, config: TransformConfig) -> None:
+        self.config = config
 
-    def __init__(self, input_file, settings):
-        self.input_file = input_file
-        self.settings = settings
-        self.df = None
-        self.output_file = input_file[:-4]+self.settings["replace_file_value"] + ".m3u"
+    def transform_file(self, source_file: Path) -> TransformationResult:
+        lines = source_file.read_text(encoding="utf-8").splitlines()
+        transformed_lines = self._transform_lines(lines)
+        destination = self._resolve_output_path(source_file)
+        destination.write_text("\n".join(transformed_lines) + "\n", encoding="utf-8")
+        return TransformationResult(
+            source=source_file,
+            destination=destination,
+            lines_written=len(transformed_lines),
+        )
 
-        if self.settings["replace_file"]:
-            self.output_file = self.input_file
+    def _transform_lines(self, lines: list[str]) -> list[str]:
+        output: list[str] = [self.config.header]
 
-    def transform(self):
-        self.read_m3u_file()
-        self.switch_slash_placement()
-        self.delete_lines_containing(self.settings["kill_line"])
-        self.standardize_element()
-        self.replace_lines_containing()
-        self.replace_lines_starting_with(self.settings["initiator"], self.settings["replacement"])
-        self.write_m3u_file()
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line or line == self.config.header:
+                continue
 
-        print("Transformation complete. Output file:", self.output_file)
+            normalized = line.replace("\\", "/")
+            if self.config.kill_line and self.config.kill_line in normalized:
+                continue
 
-    @error_check_decorator
-    def read_m3u_file(self):
-        pd.set_option('display.max_colwidth', None)
-        self.df = pd.read_csv(self.input_file, header=None, on_bad_lines="skip", engine='python', sep='\t')
+            normalized = self._title_case_artist_segment(normalized)
+            normalized = self._replace_items(normalized)
+            normalized = self._replace_prefix(normalized)
+            output.append(normalized)
 
-    @error_check_decorator
-    def replace_lines_starting_with(self, search_str, replace_str):
-        for index, row in self.df.iterrows():
-            if row[0].startswith(search_str):
-                self.df.at[index, 0] = replace_str + row[0][len(search_str):]
+        return output
 
-    @error_check_decorator
-    def replace_lines_containing(self):
-        targets = self.settings["target_items"]
-        replacements = self.settings["replacement_items"]
+    def _replace_prefix(self, line: str) -> str:
+        if self.config.initiator and line.startswith(self.config.initiator):
+            return f"{self.config.replacement}{line[len(self.config.initiator):]}"
+        return line
 
-        if len(targets) != len(replacements):
-            return
+    def _replace_items(self, line: str) -> str:
+        updated = line
+        for target, replacement in zip(self.config.target_items, self.config.replacement_items):
+            updated = updated.replace(target, replacement)
+        return updated
 
-        for idx in range(len(targets)):
-            target = targets[idx]
-            replacement = replacements[idx]
+    def _title_case_artist_segment(self, line: str) -> str:
+        segments = line.split("/")
+        if len(segments) > 2 and segments[2].isupper():
+            segments[2] = segments[2].title()
+            return "/".join(segments)
+        return line
 
-            for index, row in self.df.iterrows():
-                self.df.at[index, 0] = row[0].replace(target, replacement)
-
-    @error_check_decorator
-    def standardize_element(self):
-        for index, row in self.df.iterrows():
-            entry = row[0]
-            entry_elements = entry.split("/")
-            artist_entry = str(entry_elements[2])
-            if artist_entry.isupper():
-                entry_elements[2] = artist_entry.title()
-                self.df.at[index, 0] = "/".join(entry_elements)
-
-    @error_check_decorator
-    def delete_lines_containing(self, search_str):
-        for index, row in self.df.iterrows():
-            if search_str in row[0]:
-                self.df.drop(index, inplace=True)
-
-    @error_check_decorator
-    def switch_slash_placement(self):
-        for index, row in self.df.iterrows():
-            self.df.at[index, 0] = row[0].replace("\\", "/")
-
-    def write_m3u_file(self):
-        self.df.columns = [self.settings["header"]]
-        self.df.to_csv(self.output_file, sep="\t", header=True, index=False)
+    def _resolve_output_path(self, source_file: Path) -> Path:
+        if self.config.replace_file:
+            return source_file
+        return source_file.with_name(f"{source_file.stem}{self.config.replace_file_value}{source_file.suffix}")
